@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Claude
+.claude/
+
+# Training outputs
+outputs/
+logs/
+log/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+*.ipynb_checkpoints/
+
+# ONNX / exported models
+*.onnx
+deploy/deploy_sim2sim/policies/*.pt
+
+# datasets for robot
+/datasets/motions/
+
+# meshes
+/datasets/
+**/logs/
+**/outputs/
+**/log/
+*.pt
+*.pth
+*.ckpt
+*.bag
+*.db3
+*.mcap
+*.usd
+*.usda
+*.usdc
+*.zip
+*.tar
+*.gz
+**/pet/
+**/pet_*
+**/pet.py
+.codex/
+.agents/
+**/.env*
+*.pem
+*.key
