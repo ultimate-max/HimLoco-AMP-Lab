@@ -2,13 +2,14 @@
 
 [English](README.md)
 
-这是一个面向 Unitree Go2 的 Isaac Lab 四足运动控制项目，结合 PPO、历史观测与
+这是一个面向 Unitree Go2 和 ChituMax 的 Isaac Lab 四足运动控制项目，结合 PPO、历史观测与
 对抗运动先验（AMP），并提供训练、策略回放与导出、专家动作重放以及 MuJoCo
 sim-to-sim 工具。
 
 ## 主要功能
 
 - Unitree Go2 的 AMP 与纯 PPO 速度控制任务。
+- ChituMax 的 RobotLoad AMP 训练（负载随机化、MGMS、RSI、对称损失），见 [训练说明](docs/chitu_max_amp.md)。
 - 地形课程、域随机化与任务奖励。
 - 六帧策略观测和 AMP 判别器。
 - 用于验证本地专家轨迹的运动学重放工具。

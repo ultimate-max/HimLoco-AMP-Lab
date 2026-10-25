@@ -1,0 +1,12 @@
+diff --git a/source/isaaclab/setup.py b/source/isaaclab/setup.py
+--- a/source/isaaclab/setup.py
++++ b/source/isaaclab/setup.py
+@@ -35,7 +35,7 @@ INSTALL_REQUIRES = [
+     # make sure this is consistent with isaac sim version
+     "pillow==11.3.0",
+     # livestream
+-    "starlette==0.49.1",
++    "starlette==0.45.3",
+     # testing
+     "pytest",
+     "pytest-mock",

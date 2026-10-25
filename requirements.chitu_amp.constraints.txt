@@ -1,0 +1,6 @@
+torch==2.7.0+cu128
+torchvision==0.22.0+cu128
+numpy==1.26.0
+isaacsim==5.1.0
+packaging==23.0
+wheel==0.45.1

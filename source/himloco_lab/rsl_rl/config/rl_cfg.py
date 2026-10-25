@@ -194,6 +194,9 @@ class AMPOnPolicyRunnerCfg(HIMOnPolicyRunnerCfg):
 
     reorder_motion_data: bool = False
     """Whether to convert legacy PyBullet leg ordering in motion files."""
+    amp_joint_reorder: str | None = None
+    amp_foot_fk_params: dict | None = None
+    amp_recompute_joint_vel: bool = False
     
     amp_num_preload_transitions: int = 2000000
     """Number of preloaded transitions from motion data."""
@@ -214,6 +217,7 @@ class AMPOnPolicyRunnerCfg(HIMOnPolicyRunnerCfg):
 class AMPPPOAlgorithmCfg(HIMPPPOAlgorithmCfg):
     """AMP PPO algorithm configuration."""
     amp_replay_buffer_size: int = 1000000
+    symmetry_coef: float = 0.0
 
 @configclass
 class AMPPPOActorCriticCfg(HIMPPOActorCriticCfg):

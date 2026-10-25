@@ -29,6 +29,7 @@ class AMPPPO:
                  device='cpu',
                  amp_replay_buffer_size=100000,
                  min_std=None,
+                 symmetry_coef=0.0,
                  ):
 
         self.device = device
@@ -37,6 +38,9 @@ class AMPPPO:
         self.schedule = schedule
         self.learning_rate = learning_rate
         self.min_std = min_std
+        self.symmetry_coef = symmetry_coef
+        self.symmetry_ops = None
+        self.mean_symmetry_loss = 0.0
 
         # Discriminator components
         self.discriminator = discriminator
@@ -117,6 +121,7 @@ class AMPPPO:
         self.storage.compute_returns(last_values, self.gamma, self.lam)
 
     def update(self):
+        self.mean_symmetry_loss = 0.0
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_estimation_loss = 0
@@ -204,12 +209,24 @@ class AMPPPO:
                 grad_pen_loss = self.discriminator.compute_grad_pen(
                     expert_state, expert_next_state, lambda_=10)
                 
+                symmetry_loss = mu_batch.new_zeros(())
+                if self.symmetry_coef > 0:
+                    if self.symmetry_ops is None:
+                        raise ValueError("AMP symmetry is enabled without observation/action mappings")
+                    from ..utils.chitu_symmetry import mirror_observations, gaussian_kl
+                    mirrored_obs = mirror_observations(obs_batch, self.symmetry_ops)
+                    mirrored_mean = self.actor_critic.act_inference(mirrored_obs)
+                    action_perm, action_sign = self.symmetry_ops[2:]
+                    mirrored_mean = mirrored_mean[:, action_perm] * action_sign
+                    mirrored_std = sigma_batch[:, action_perm]
+                    symmetry_loss = gaussian_kl(mu_batch, sigma_batch, mirrored_mean, mirrored_std).mean()
+
                 # Compute total loss.
                 loss = (
                     surrogate_loss +
                     self.value_loss_coef * value_loss -
                     self.entropy_coef * entropy_batch.mean() +
-                    amp_loss + grad_pen_loss)
+                    amp_loss + grad_pen_loss + self.symmetry_coef * symmetry_loss)
                 # loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean()
                 # Gradient step
                 self.optimizer.zero_grad()
@@ -225,6 +242,7 @@ class AMPPPO:
                     self.amp_normalizer.update(expert_state_unnorm.cpu().numpy())
 
                 mean_value_loss += value_loss.item()
+                self.mean_symmetry_loss += symmetry_loss.item()
                 mean_surrogate_loss += surrogate_loss.item()
                 mean_estimation_loss += estimation_loss
                 mean_swap_loss += swap_loss
@@ -234,6 +252,7 @@ class AMPPPO:
                 mean_expert_pred += expert_d.mean().item()
 
         num_updates = self.num_learning_epochs * self.num_mini_batches
+        self.mean_symmetry_loss /= num_updates
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
         mean_estimation_loss /= num_updates

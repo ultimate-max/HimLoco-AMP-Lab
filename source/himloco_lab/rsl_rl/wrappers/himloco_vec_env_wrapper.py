@@ -120,7 +120,7 @@ class HimlocoVecEnvWrapper(VecEnv):
             self._termination_privileged_obs = None
         
         # reset at the start since the HimLoco runner does not call reset
-        self.env.reset()
+        self.reset()
 
     def __str__(self):
         """Returns the wrapper name and the :attr:`env` representation string."""
@@ -213,6 +213,11 @@ class HimlocoVecEnvWrapper(VecEnv):
         """
         # reset the environment
         obs_dict, _ = self.env.reset()
+        self.obs_history_buf = torch.zeros_like(self.obs_history_buf)
+        self.obs_history_buf[:, :self.num_one_step_obs] = obs_dict["policy"]
+        if self.privileged_obs_history_buf is not None:
+            self.privileged_obs_history_buf = torch.zeros_like(self.privileged_obs_history_buf)
+            self.privileged_obs_history_buf[:, :self.num_one_step_privileged_obs] = obs_dict["critic"]
         return obs_dict["policy"], {"observations": obs_dict}
 
     def get_observations(self) -> torch.Tensor:
@@ -294,10 +299,12 @@ class HimlocoVecEnvWrapper(VecEnv):
         # Environment returns single-step obs, wrapper does history stacking
         # [new_single_step_obs, old_history[:-single_step]]
         if self.history_length > 0:
+            history = self.obs_history_buf.clone()
+            history[dones.bool()] = 0.0
             self.obs_history_buf = torch.cat(
                 (
                     current_obs[:, :self.num_one_step_obs],
-                    self.obs_history_buf[:, :-self.num_one_step_obs]
+                    history[:, :-self.num_one_step_obs]
                 ),
                 dim=-1
             )
@@ -317,10 +324,12 @@ class HimlocoVecEnvWrapper(VecEnv):
             )
             # Update history buffer
             if self.privileged_history_length > 0:
+                privileged_history = self.privileged_obs_history_buf.clone()
+                privileged_history[dones.bool()] = 0.0
                 self.privileged_obs_history_buf = torch.cat(
                     (
                         current_privileged_obs[:, :self.num_one_step_privileged_obs],
-                        self.privileged_obs_history_buf[:, :-self.num_one_step_privileged_obs]
+                        privileged_history[:, :-self.num_one_step_privileged_obs]
                     ),
                     dim=-1
                 )

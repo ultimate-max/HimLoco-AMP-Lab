@@ -17,6 +17,9 @@ def reset_from_amp(
     joint_names: list[str],
     command_name: str = "base_velocity",
     reorder_motion_data: bool = False,
+    joint_reorder: str | None = None,
+    foot_fk_params: dict | None = None,
+    recompute_joint_vel: bool = False,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ):
     """Reset a subset of environments from random reference-motion frames (RSI)."""
@@ -32,6 +35,9 @@ def reset_from_amp(
             time_between_frames=env.step_dt,
             motion_files=motion_files,
             reorder=reorder_motion_data,
+            joint_reorder=joint_reorder,
+            foot_fk_params=foot_fk_params,
+            recompute_joint_vel=recompute_joint_vel,
         )
     frames = env._amp_reset_loader.get_full_frame_batch(len(selected))
     robot: Articulation = env.scene[asset_cfg.name]

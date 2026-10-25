@@ -2,13 +2,14 @@
 
 [中文文档](README_CN.md)
 
-An Isaac Lab project for Unitree Go2 locomotion using PPO, history-based
+An Isaac Lab project for Unitree Go2 and ChituMax locomotion using PPO, history-based
 observations, and Adversarial Motion Priors (AMP). It includes training,
 playback/export, expert-motion replay, and MuJoCo sim-to-sim tools.
 
 ## Features
 
 - AMP and pure PPO velocity-control tasks for Unitree Go2.
+- ChituMax RobotLoad AMP with payload randomization, MGMS friction, RSI, and symmetry loss: [training guide](docs/chitu_max_amp.md).
 - Terrain curriculum, domain randomization, and task rewards.
 - Six-frame actor observations and an AMP discriminator.
 - Kinematic replay for locally supplied expert trajectories.

@@ -40,6 +40,7 @@ deploy/deploy_sim2sim/policies/*.pt
 
 # meshes
 /datasets/
+/resources/robotload/datasets/
 **/logs/
 **/outputs/
 **/log/

@@ -3,6 +3,7 @@ import time
 import os
 from collections import deque
 import statistics
+import re
 
 from torch.utils.tensorboard import SummaryWriter
 import torch
@@ -44,7 +45,10 @@ class AMPOnPolicyRunner:
             device, time_between_frames=self.env.dt, preload_transitions=True,
             num_preload_transitions=train_cfg['amp_num_preload_transitions'],
             motion_files=train_cfg["amp_motion_files"],
-            reorder=train_cfg.get("reorder_motion_data", False))
+            reorder=train_cfg.get("reorder_motion_data", False),
+            joint_reorder=train_cfg.get("amp_joint_reorder"),
+            foot_fk_params=train_cfg.get("amp_foot_fk_params"),
+            recompute_joint_vel=train_cfg.get("amp_recompute_joint_vel", False))
         if self.env.get_amp_observations().shape[1] != amp_data.observation_dim:
             raise ValueError(
                 "AMP observation dimension mismatch: environment provides "
@@ -59,10 +63,26 @@ class AMPOnPolicyRunner:
             train_cfg['amp_task_reward_lerp']).to(self.device)
 
         alg_class = eval(self.cfg["algorithm_class_name"]) # AMPPPO
+        normalized_std = self.cfg["min_normalized_std"]
+        if isinstance(normalized_std, dict):
+            joint_names = self.env.unwrapped.scene["robot"].joint_names
+            normalized_std_values = []
+            for name in joint_names:
+                values = [value for pattern, value in normalized_std.items() if re.fullmatch(pattern, name)]
+                if len(values) != 1:
+                    raise ValueError(f"Expected exactly one minimum std for joint {name}")
+                normalized_std_values.append(values[0])
+            normalized_std = normalized_std_values
         min_std = (
-            torch.tensor(self.cfg["min_normalized_std"], device=self.device) *
+            torch.tensor(normalized_std, device=self.device) *
             (torch.abs(self.env.dof_pos_limits[:, 1] - self.env.dof_pos_limits[:, 0])))
         self.alg: AMPPPO = alg_class(actor_critic,discriminator, amp_data, amp_normalizer, device=self.device, min_std=min_std, **self.alg_cfg)
+        if self.alg.symmetry_coef > 0:
+            from ..utils.chitu_symmetry import build_symmetry
+            self.alg.symmetry_ops = build_symmetry(
+                self.env.unwrapped.scene["robot"].joint_names,
+                self.env.num_one_step_obs, self.device,
+            )
 
         self.num_steps_per_env = self.cfg["num_steps_per_env"]
         self.save_interval = self.cfg["save_interval"]
@@ -217,6 +237,7 @@ class AMPOnPolicyRunner:
         self.writer.add_scalar('Loss/Estimation Loss', locs['mean_estimation_loss'], locs['it'])
         self.writer.add_scalar('Loss/Swap Loss', locs['mean_swap_loss'], locs['it'])
         self.writer.add_scalar('Loss/AMP', locs['mean_amp_loss'], locs['it'])
+        self.writer.add_scalar('Loss/symmetry', self.alg.mean_symmetry_loss, locs['it'])
         self.writer.add_scalar('Loss/AMP_grad', locs['mean_grad_pen_loss'], locs['it'])
         self.writer.add_scalar('Loss/learning_rate', self.alg.learning_rate, locs['it'])
         self.writer.add_scalar('Policy/mean_noise_std', mean_std.item(), locs['it'])

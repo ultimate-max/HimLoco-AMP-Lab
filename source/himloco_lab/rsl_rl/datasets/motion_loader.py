@@ -57,6 +57,9 @@ class AMPLoader:
             num_preload_transitions=1000000,
             motion_files=None,
             reorder=False,
+            joint_reorder=None,
+            foot_fk_params=None,
+            recompute_joint_vel=False,
             ):
         """Expert dataset provides AMP observations from Dog mocap dataset.
 
@@ -66,6 +69,10 @@ class AMPLoader:
             raise ValueError("AMP motion_files is empty; configure at least one motion JSON file")
         self.device = device
         self.time_between_frames = time_between_frames
+        if joint_reorder not in (None, "chitu"):
+            raise ValueError(f"Unsupported AMP joint_reorder: {joint_reorder}")
+        if reorder and joint_reorder:
+            raise ValueError("Specify only one AMP motion reordering mode")
         
         # Values to store for each trajectory.
         self.trajectories = []
@@ -92,6 +99,19 @@ class AMPLoader:
                 # → type-grouped: [FL_hip,FR_hip,RL_hip,RR_hip, FL_thigh,FR_thigh,RL_thigh,RR_thigh, FL_calf,FR_calf,RL_calf,RR_calf]
                 if reorder:
                     motion_data = self.reorder_from_pybullet_to_isaac(motion_data)
+                if joint_reorder == "chitu":
+                    for start, end in ((7, 19), (19, 31), (37, 49), (49, 61)):
+                        motion_data[:, start:end] = motion_data[:, start:end].reshape(-1, 4, 3)[:, [1, 3, 0, 2]].reshape(-1, 12)
+                frame_duration = float(motion_json["FrameDuration"])
+                if len(motion_data) < 2 or not np.isfinite(motion_data).all() or frame_duration <= 0:
+                    raise ValueError(f"Invalid AMP frames or FrameDuration in {motion_file}")
+                if foot_fk_params is not None:
+                    from .kinematics import foot_positions
+                    motion_data[:, 19:31] = foot_positions(
+                        torch.from_numpy(motion_data[:, 7:19]), foot_fk_params
+                    ).numpy()
+                if recompute_joint_vel:
+                    motion_data[:, 37:49] = np.gradient(motion_data[:, 7:19], frame_duration, axis=0)
 
                 # Normalize and standardize quaternions.
                 for f_i in range(motion_data.shape[0]):

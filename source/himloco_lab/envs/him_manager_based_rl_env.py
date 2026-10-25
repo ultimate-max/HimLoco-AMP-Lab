@@ -157,6 +157,7 @@ class HimlocoManagerBasedRLEnv(ManagerBasedRLEnv):
         command = self.command_manager.get_term(command_name)
         command.vel_command_b[selected, :2] = lin_vel_xy
         command.vel_command_b[selected, 2] = ang_vel_z
+        command.is_standing_env[selected] = False
         if command.cfg.heading_command:
             yaw_rate = torch.clamp(ang_vel_z, -0.5 * torch.pi, 0.5 * torch.pi)
             command.heading_target[selected] = torch.atan2(
@@ -201,6 +202,10 @@ class HimlocoManagerBasedRLEnv(ManagerBasedRLEnv):
         root_quat_w = robot.data.root_quat_w[:, None, :].expand(-1, len(self._amp_foot_body_indices), -1)
         foot_pos = quat_apply_inverse(root_quat_w.reshape(-1, 4), (foot_pos_w - root_pos_w).reshape(-1, 3))
         foot_pos = foot_pos.reshape(self.num_envs, -1)
+        fk_params = getattr(self.cfg, "amp_foot_fk_params", None)
+        if fk_params is not None:
+            from himloco_lab.rsl_rl.datasets.kinematics import foot_positions
+            foot_pos = foot_positions(joint_pos, fk_params)
         
         return torch.cat([
             joint_pos, foot_pos, base_lin_vel, base_ang_vel, joint_vel, z_pos

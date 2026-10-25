@@ -1,0 +1,10 @@
+name: chitu_amp
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.11
+  - pip
+  - wheel=0.45.1
+  - xorg-libxt
+  - libglu
