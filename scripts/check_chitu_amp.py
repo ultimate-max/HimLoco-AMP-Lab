@@ -100,7 +100,7 @@ def main():
     algorithm = algorithm_type(
         actor, discriminator, loader, normalizer_type(43),
         num_learning_epochs=1, num_mini_batches=2, amp_replay_buffer_size=128,
-        symmetry_coef=15.0, min_std=torch.full((12,), 0.05),
+        symmetry_coef=0.5, min_std=torch.full((12,), 0.05),
     )
     algorithm.symmetry_ops = ops
     algorithm.init_storage(16, 4, [45], [51], [12])

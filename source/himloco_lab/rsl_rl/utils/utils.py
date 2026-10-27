@@ -75,6 +75,8 @@ def unpad_trajectories(trajectories, masks):
 def quaternion_slerp(q0, q1, fraction, spin=0, shortestpath=True):
     """Batch quaternion spherical linear interpolation."""
 
+    q0 = q0.clone()
+    q1 = q1.clone()
     out = torch.zeros_like(q0)
 
     zero_mask = torch.isclose(fraction, torch.zeros_like(fraction)).squeeze()
@@ -83,6 +85,9 @@ def quaternion_slerp(q0, q1, fraction, spin=0, shortestpath=True):
     out[ones_mask] = q1[ones_mask]
 
     d = torch.sum(q0 * q1, dim=-1, keepdim=True)
+    # Unit quaternions in float32 often have a dot product slightly outside
+    # [-1, 1]. acos of that value is NaN and was written into the reset pose.
+    d = d.clamp(-1.0, 1.0)
     dist_mask = (torch.abs(torch.abs(d) - 1.0) < _EPS).squeeze()
     out[dist_mask] = q0[dist_mask]
 

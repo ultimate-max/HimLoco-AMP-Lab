@@ -73,6 +73,14 @@ RL hip/thigh/calf, RR hip/thigh/calf
 python scripts/replay_data.py --task Unitree-Go2-AMP-Play --max_steps 500
 ```
 
+ChituMax 的动捕放在 `resources/robotload/datasets/chitu/mocap_motions/*.txt`，文件内容仍是上面的 JSON 帧。关节顺序是 LF/LH/RF/RH，每条腿依次为 HAA、HFE、KFE。回放会按训练配置做 Chitu 腿序重排，并用正运动学重算足端位置。训练前检查：
+
+```bash
+python scripts/replay_data.py --task ChituMax-AMP-Play --motion yaw_0p5
+```
+
+`--motion` 可以是文件名（不带 `.txt`）、完整路径，或从 0 开始的序号。不写则按文件名顺序播放目录里的全部轨迹。
+
 ## 当前 AMP 与控制参数
 
 - 奖励混合：`0.9 * task_reward + 0.1 * style_reward`。

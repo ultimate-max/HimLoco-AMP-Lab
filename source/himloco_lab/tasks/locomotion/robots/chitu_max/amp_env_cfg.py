@@ -28,7 +28,7 @@ class RobotEnvCfg(BaseRobotEnvCfg):
     def __post_init__(self):
         super().__post_init__()
         self.scene.robot = CHITU_MAX_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
-        self.scene.num_envs = 5480
+        self.scene.num_envs = 4096
         self.scene.env_spacing = 3.0
         self.scene.terrain.terrain_type = "plane"
         self.scene.terrain.terrain_generator = None
@@ -50,6 +50,7 @@ class RobotEnvCfg(BaseRobotEnvCfg):
         self.observations.critic.joint_vel_rel.noise.n_min = -0.8
         self.observations.critic.joint_vel_rel.noise.n_max = 0.8
         self.observations.critic.height_scanner = None
+        self.events.physics_material.func = mdp.randomize_chitu_contact_materials
         self.events.physics_material.params.update(
             static_friction_range=(0.3, 1.0), dynamic_friction_range=(0.3, 1.0),
             restitution_range=(0.0, 0.5),
@@ -81,13 +82,27 @@ class RobotEnvCfg(BaseRobotEnvCfg):
                 "damping_distribution_params": (0.9, 1.1), "operation": "scale",
             },
         )
+        # Global clock, same instant for every env. XY velocity is replaced, not added.
+        self.events.push_robot.func = mdp.push_by_setting_xy_velocity
+        self.events.push_robot.is_global_time = True
         self.events.push_robot.interval_range_s = (12.0, 12.0)
         self.events.push_robot.params["velocity_range"] = {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}
-        self.events.external_force.params.update(force_range=(-25.0, 25.0), torque_range=(-30.0, 30.0))
+        # Constant base wrench for the whole episode, sampled once on reset.
+        self.events.external_force = EventTerm(
+            func=mdp.apply_external_force_torque,
+            mode="reset",
+            params={
+                "asset_cfg": SceneEntityCfg("robot", body_names="base"),
+                "force_range": (-25.0, 25.0),
+                "torque_range": (-30.0, 30.0),
+            },
+        )
         self.events.reference_state = EventTerm(
             func=mdp.reset_from_amp, mode="reset",
             params={
-                "motion_files": CHITU_MOTION_FILES, "probability": 0.85,
+                # RobotLoad keeps reference_state_initialization_prob in the cfg but
+                # reset_idx never reads it: every reset samples a reference frame.
+                "motion_files": CHITU_MOTION_FILES, "probability": 1.0,
                 "joint_names": CHITU_JOINT_NAMES, "joint_reorder": "chitu",
                 "foot_fk_params": CHITU_FK_PARAMS, "recompute_joint_vel": True,
             },
@@ -104,6 +119,11 @@ class RobotPlayEnvCfg(RobotEnvCfg):
         self.scene.num_envs = 64
         self.observations.policy.enable_corruption = False
         self.observations.critic.enable_corruption = False
+        self.commands.base_velocity.heading_command = False
+        self.commands.base_velocity.rel_standing_envs = 0.0
+        self.commands.base_velocity.ranges.lin_vel_x = (-1.0, 1.5)
+        self.commands.base_velocity.ranges.lin_vel_y = (-1.0, 1.0)
+        self.commands.base_velocity.ranges.ang_vel_z = (-1.0, 1.0)
         for event_name in (
             "physics_material", "add_base_mass", "randomize_rigid_body_com", "link_mass",
             "payload_mass", "payload_com", "actuator_gains", "push_robot", "external_force",

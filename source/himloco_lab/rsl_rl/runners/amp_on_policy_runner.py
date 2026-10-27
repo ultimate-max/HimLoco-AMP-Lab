@@ -197,11 +197,12 @@ class AMPOnPolicyRunner:
             if self.log_dir is not None:
                 self.log(locals())
             if it % self.save_interval == 0:
-                self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(it)))
+                self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(it)), current_iter=it)
             ep_infos.clear()
         
         self.current_learning_iteration += num_learning_iterations
-        self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(self.current_learning_iteration)))
+        self.save(os.path.join(self.log_dir, 'model_{}.pt'.format(self.current_learning_iteration)),
+                  current_iter=self.current_learning_iteration)
 
     def log(self, locs, width=80, pad=35):
         self.tot_timesteps += self.num_steps_per_env * self.env.num_envs
@@ -299,16 +300,16 @@ class AMPOnPolicyRunner:
                        f"""{'Total timesteps:':>{pad}} {self.tot_timesteps}\n"""
                        f"""{'Iteration time:':>{pad}} {iteration_time:.2f}s\n"""
                        f"""{'Total time:':>{pad}} {self.tot_time:.2f}s\n"""
-                       f"""{'ETA:':>{pad}} {self.tot_time / (locs['it'] + 1) * (
-                               locs['num_learning_iterations'] - locs['it']):.1f}s\n""")
+                       f"""{'ETA:':>{pad}} {self.tot_time / (locs['it'] - self.current_learning_iteration + 1) * (
+                               self.current_learning_iteration + locs['num_learning_iterations'] - locs['it'] - 1):.1f}s\n""")
         print(log_string)
 
-    def save(self, path, infos=None):
+    def save(self, path, infos=None, current_iter=None):
         torch.save({
             'model_state_dict': self.alg.actor_critic.state_dict(),
             'optimizer_state_dict': self.alg.optimizer.state_dict(),
             'estimator_optimizer_state_dict': self.alg.actor_critic.estimator.optimizer.state_dict(),
-            'iter': self.current_learning_iteration,
+            'iter': self.current_learning_iteration if current_iter is None else current_iter,
             'infos': infos,
             }, path)
 
@@ -318,7 +319,14 @@ class AMPOnPolicyRunner:
         if load_optimizer:
             self.alg.optimizer.load_state_dict(loaded_dict['optimizer_state_dict'])
             self.alg.actor_critic.estimator.optimizer.load_state_dict(loaded_dict['estimator_optimizer_state_dict'])
-        self.current_learning_iteration = loaded_dict['iter']
+        # Mid-run checkpoints used to store iter=0 because the counter was only
+        # updated after learn() finished. The filename still has the real step.
+        self.current_learning_iteration = int(loaded_dict['iter'])
+        if self.current_learning_iteration == 0:
+            import re
+            match = re.search(r'model_(\d+)\.pt', path)
+            if match:
+                self.current_learning_iteration = int(match.group(1))
         return loaded_dict['infos']
 
     def get_inference_policy(self, device=None):

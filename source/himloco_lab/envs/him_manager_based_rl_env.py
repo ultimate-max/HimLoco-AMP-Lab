@@ -17,6 +17,7 @@ class HimlocoManagerBasedRLEnv(ManagerBasedRLEnv):
         """
         super().__init__(cfg, render_mode=render_mode, **kwargs)
         self._pre_pre_action = torch.zeros((self.num_envs, self.action_manager.total_action_dim), device=self.device)
+        self._amp_reset_warmup = False
         # Map the simulator's internal ordering to the canonical motion-file order.
         robot = self.scene.articulations["robot"]
         amp_joint_names = getattr(cfg, "amp_joint_names", None)
@@ -64,6 +65,7 @@ class HimlocoManagerBasedRLEnv(ManagerBasedRLEnv):
                 - extras: Additional information dictionary (Dict[str, Any])
         """
         # process actions
+        self._amp_reset_warmup = False
         self._pre_pre_action = self.action_manager.prev_action.clone()
         self.action_manager.process_action(action.to(self.device))
 
@@ -135,11 +137,21 @@ class HimlocoManagerBasedRLEnv(ManagerBasedRLEnv):
         # -- update command
         self.command_manager.compute(dt=self.step_dt)
         # -- step interval events
+        # Envs reset on this step keep their reset velocity, matching legged_gym
+        # (push, then reset overwrites those actors).
+        self._skip_push_env_ids = reset_env_ids
+        self._hide_push_from_obs = False
         if "interval" in self.event_manager.available_modes:
             self.event_manager.apply(mode="interval", dt=self.step_dt)
+        robot = self.scene["robot"]
+        if self._hide_push_from_obs:
+            robot.write_root_velocity_to_sim(self._pre_push_root_vel)
         # -- compute observations
         # note: done after reset to get the correct observations for reset envs
         self.obs_buf = self.observation_manager.compute(update_history=True)
+        if self._hide_push_from_obs:
+            robot.write_root_velocity_to_sim(self._pushed_root_vel)
+            self._hide_push_from_obs = False
 
         # return observations, rewards, resets and extras
         return (self.obs_buf, self.obs_buf_before_reset, self.reward_buf,
@@ -151,20 +163,68 @@ class HimlocoManagerBasedRLEnv(ManagerBasedRLEnv):
         """Reset environments and restore RSI commands after CommandManager reset."""
         super()._reset_idx(env_ids)
         pending = getattr(self, "_pending_amp_reset_command", None)
+        self._pending_amp_reset_command = None
+        if pending is not None:
+            command_name, selected, lin_vel_xy, ang_vel_z, expert_heading = pending
+            command = self.command_manager.get_term(command_name)
+            command.vel_command_b[selected, :2] = lin_vel_xy
+            command.vel_command_b[selected, 2] = ang_vel_z
+            command.is_standing_env[selected] = False
+            if command.cfg.heading_command:
+                yaw_rate = torch.clamp(ang_vel_z, -0.5 * torch.pi, 0.5 * torch.pi)
+                command.heading_target[selected] = torch.atan2(
+                    torch.sin(expert_heading + 2.0 * yaw_rate),
+                    torch.cos(expert_heading + 2.0 * yaw_rate),
+                )
+        self._apply_pending_pd_hold(env_ids)
+        self._log_robotload_reward_terms(env_ids)
+
+    def _log_robotload_reward_terms(self, env_ids):
+        """Log each RobotLoad task term in the same units as Episode_Reward/robotload."""
+        sums = getattr(self, "_robotload_term_sums", None)
+        if not sums or len(env_ids) == 0:
+            return
+        log = self.extras.setdefault("log", {})
+        for name, total in sums.items():
+            log[f"Episode_Reward/{name}"] = torch.mean(total[env_ids]) / self.max_episode_length_s
+            total[env_ids] = 0.0
+
+    def reset(self, seed: int | None = None, env_ids=None, options: dict | None = None):
+        """Reset, then settle one policy step under the RSI hold action.
+
+        RobotLoad's ``reset`` steps once with the PD-hold action before the
+        policy sees an observation. Mid-episode resets only install that action
+        into the observation; they do not take an extra step.
+        """
+        observations, extras = super().reset(seed=seed, env_ids=env_ids, options=options)
+        if self._amp_reset_warmup:
+            self._amp_reset_warmup = False
+            self.step(self.action_manager.action)
+            return self.obs_buf, self.extras
+        return observations, extras
+
+    def _apply_pending_pd_hold(self, env_ids):
+        pending = getattr(self, "_pending_amp_hold_action", None)
+        self._pending_amp_hold_action = None
         if pending is None:
             return
-        command_name, selected, lin_vel_xy, ang_vel_z, expert_heading = pending
-        command = self.command_manager.get_term(command_name)
-        command.vel_command_b[selected, :2] = lin_vel_xy
-        command.vel_command_b[selected, 2] = ang_vel_z
-        command.is_standing_env[selected] = False
-        if command.cfg.heading_command:
-            yaw_rate = torch.clamp(ang_vel_z, -0.5 * torch.pi, 0.5 * torch.pi)
-            command.heading_target[selected] = torch.atan2(
-                torch.sin(expert_heading + 2.0 * yaw_rate),
-                torch.cos(expert_heading + 2.0 * yaw_rate),
-            )
-        self._pending_amp_reset_command = None
+        selected, hold = pending
+        if len(selected) == 0:
+            return
+        term = self.action_manager.get_term("JointPositionAction")
+        term._raw_actions[selected] = hold
+        scale = term._scale[selected] if isinstance(term._scale, torch.Tensor) else term._scale
+        offset = term._offset[selected] if isinstance(term._offset, torch.Tensor) else term._offset
+        processed = hold * scale + offset
+        if term.cfg.clip is not None:
+            processed = processed.clamp(min=term._clip[selected, :, 0], max=term._clip[selected, :, 1])
+        term._processed_actions[selected] = processed
+        self.action_manager._action[selected] = hold
+        self.action_manager._prev_action[selected] = hold
+        term._asset.set_joint_position_target(processed, joint_ids=term._joint_ids, env_ids=selected)
+        if len(env_ids) == self.num_envs and len(selected) == self.num_envs:
+            self._amp_reset_warmup = True
+
     @property
     def pre_pre_action(self) -> torch.Tensor:
         """The previous  previous actions sent to the environment. Shape is (num_envs, total_action_dim)."""

@@ -16,8 +16,12 @@ class ChituAMPPPORunnerCfg(AMPPPORunnerCfg):
     amp_recompute_joint_vel = True
     amp_num_preload_transitions = 2000000
     amp_reward_coef = 10.0
-    amp_task_reward_lerp = 0.28
+    # Weight of the task reward in the mix. Style weight is 1 - this value.
+    # 0.28 left style at about one third of the scalar reward because the task
+    # term is several times larger per step; 0.14 brings the two closer.
+    amp_task_reward_lerp = 0.5  # 0.8 - 0.5 - 0.28
     min_normalized_std = {".*_HAA_joint": 0.05, ".*_HFE_joint": 0.02, ".*_KFE_joint": 0.05}
 
     def __post_init__(self):
-        self.algorithm.symmetry_coef = 15.0
+        # RobotLoad averages the KL over action dims and uses 0.5.
+        self.algorithm.symmetry_coef = 0.5

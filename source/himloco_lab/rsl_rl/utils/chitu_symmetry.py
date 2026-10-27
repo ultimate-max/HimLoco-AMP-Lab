@@ -25,6 +25,13 @@ def mirror_observations(observations, ops):
     return (frames[:, :, obs_perm] * obs_sign).reshape_as(observations)
 
 
-def gaussian_kl(mean, std, other_mean, other_std):
+def gaussian_kl(mean, std, other_mean, other_std, eps: float = 1e-5):
+    """KL averaged over action dimensions.
+
+    Summing the 12 action dimensions inflates the loss by about 12x relative to
+    RobotLoad's ``diagonal_gaussian_kl``.
+    """
+    std = std.clamp(min=eps)
+    other_std = other_std.clamp(min=eps)
     return (torch.log(other_std / std) +
-            (std.square() + (mean - other_mean).square()) / (2 * other_std.square()) - 0.5).sum(-1)
+            (std.square() + (mean - other_mean).square()) / (2 * other_std.square()) - 0.5).mean(-1)
