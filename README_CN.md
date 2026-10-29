@@ -81,6 +81,17 @@ python scripts/replay_data.py --task ChituMax-AMP-Play --motion yaw_0p5
 
 `--motion` 可以是文件名（不带 `.txt`）、完整路径，或从 0 开始的序号。不写则按文件名顺序播放目录里的全部轨迹。
 
+## ChituMax ONNX 导出
+
+不需要启动 Isaac，也不用改 `rl_deploy_python` 的 `chitu_max/trot`。脚本把估计器和策略包进与 `AMP_for_hardware` 相同的部署接口：输入仍是 47 维单帧，历史从旧到新排列，输出是 FR/FL/RR/RL 顺序的原始动作。
+
+```bash
+python scripts/export_policy_to_onnx.py \
+  --checkpoint logs/himloco_rsl_rl/chitu_max_amp/<run>/model_26900.pt
+```
+
+默认写到该检查点旁边的 `exported/chitu_max_policy.onnx`，也可以用 `--output` 指定路径。图内部完成这些转换：丢掉步态相位，保留已经乘过 0.25 的角速度，把指令从部署的 1.5 倍还原成训练时的原始速度，并把关节从部署的每条腿 hip/thigh/calf 排成训练时的顺序：4 个 HAA、4 个 HFE、4 个 KFE，组内都是 LF、LH、RF、RH。动作再排回 FR/FL/RR/RL。部署侧继续使用 `obs_dim: 47`、`command_scale: [1.5, 1.5, 1.5]` 和 `scale_profile: amp`。这个 `0.18 / 0.3 / 0.3` 是按每条腿三个关节给的，和训练里按关节类型给的缩放一致，不要改成四个 0.18 再接八个 0.3。安装 `onnxruntime` 后，脚本会用随机输入对比 PyTorch。
+
 ## 当前 AMP 与控制参数
 
 - 奖励混合：`0.9 * task_reward + 0.1 * style_reward`。
@@ -101,6 +112,12 @@ python -m pip install mujoco pyyaml
 python deploy/deploy_sim2sim/sim2sim.py
 ```
 
+ChituMax 使用 `play.py` 导出的 `policy.pt`（45 维训练观测），不是给实机的 47 维 ONNX：
+
+```bash
+python deploy/deploy_sim2sim/sim2sim.py --config deploy/deploy_sim2sim/config/chitu_max.yaml
+```
+
 程序自动选择最新导出的 Go2 AMP 策略，也可以指定策略或执行无窗口测试：
 
 ```bash
@@ -118,6 +135,7 @@ python deploy/deploy_sim2sim/sim2sim.py --headless --no-joystick --no-real-time 
 source/himloco_lab/             Isaac Lab 扩展与学习代码
 scripts/himloco_rsl_rl/         训练和策略回放入口
 scripts/replay_data.py          专家动作重放
+scripts/export_policy_to_onnx.py ChituMax checkpoint 导出为单个 ONNX
 deploy/deploy_sim2sim/          MuJoCo sim-to-sim
 urdf/go2/                       Go2 描述文件
 datasets/                       本地专家数据（已忽略）

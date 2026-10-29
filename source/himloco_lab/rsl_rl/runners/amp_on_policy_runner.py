@@ -269,6 +269,7 @@ class AMPOnPolicyRunner:
                           f"""{'Swap loss:':>{pad}} {locs['mean_swap_loss']:.4f}\n"""
                           f"""{'AMP loss:':>{pad}} {locs['mean_amp_loss']:.4f}\n"""
                           f"""{'AMP grad pen loss:':>{pad}} {locs['mean_grad_pen_loss']:.4f}\n"""
+                          f"""{'Symmetry loss:':>{pad}} {self.alg.mean_symmetry_loss:.4f}\n"""
                           f"""{'AMP mean policy pred:':>{pad}} {locs['mean_policy_pred']:.4f}\n"""
                           f"""{'AMP mean expert pred:':>{pad}} {locs['mean_expert_pred']:.4f}\n"""
                           f"""{'Mean action noise std:':>{pad}} {mean_std.item():.2f}\n"""
@@ -289,6 +290,7 @@ class AMPOnPolicyRunner:
                           f"""{'Swap loss:':>{pad}} {locs['mean_swap_loss']:.4f}\n"""
                           f"""{'AMP loss:':>{pad}} {locs['mean_amp_loss']:.4f}\n"""
                           f"""{'AMP grad pen loss:':>{pad}} {locs['mean_grad_pen_loss']:.4f}\n"""
+                          f"""{'Symmetry loss:':>{pad}} {self.alg.mean_symmetry_loss:.4f}\n"""
                           f"""{'AMP mean policy pred:':>{pad}} {locs['mean_policy_pred']:.4f}\n"""
                           f"""{'AMP mean expert pred:':>{pad}} {locs['mean_expert_pred']:.4f}\n"""
                           f"""{'Mean action noise std:':>{pad}} {mean_std.item():.2f}\n""")

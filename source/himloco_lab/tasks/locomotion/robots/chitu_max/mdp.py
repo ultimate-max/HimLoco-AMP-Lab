@@ -30,7 +30,7 @@ def randomize_payload(env, env_ids):
     env_ids = env_ids.to(device="cpu", dtype=torch.long)
     body_id = body_ids[0]
     masses = robot.root_physx_view.get_masses()
-    nominal = (env_ids % 4).float() * 10.0 + 5.0
+    nominal = (env_ids % 2).float() * 10.0 + 5.0
     sampled = (nominal + torch.empty(len(env_ids)).uniform_(-5.0, 5.0)).clamp_min(0.01)
     inertias = robot.root_physx_view.get_inertias()
     inertias[env_ids, body_id] *= (sampled / masses[env_ids, body_id]).unsqueeze(-1)
@@ -76,7 +76,7 @@ def _robotload_terms(env):
     height_error = (data.root_pos_w[:, 2] - env.scene.env_origins[:, 2] - 0.6).square()
     vertical_vel = linear_vel[:, 2].square()
     roll_pitch = angular_vel[:, :2].square().sum(-1)
-    sigma = torch.where(backward.bool(), 0.18, 0.35)
+    sigma = torch.where(backward.bool(), 0.15, 0.25)
     clearance = (feet[:, :, 2] - env.scene.env_origins[:, 2:3]).clamp_min(0.0)
     clearance = ((clearance / 0.080001).clamp(max=1.0) * ~contact).sum(-1)
     symmetry_sign = joint_pos.new_tensor([-1.0, 1.0, 1.0])
@@ -95,16 +95,16 @@ def _robotload_terms(env):
     abduction_weight *= command[:, 0].abs() / (command.abs().sum(-1) + 0.001)
     return {
         "tracking_lin_vel": 15.5 * torch.exp(-(command[:, :2] - linear_vel[:, :2]).square().sum(-1) / sigma),
-        "tracking_ang_vel": 10.75 * torch.exp(-(command[:, 2] - angular_vel[:, 2]).square() / 0.35),
+        "tracking_ang_vel": 10.75 * torch.exp(-(command[:, 2] - angular_vel[:, 2]).square() / 0.25),
         "lin_vel_z": -5.5 * vertical_vel,
         "lin_vel_z_yaw": -5.0 * yaw * vertical_vel,
         "ang_vel_xy": -6.45 * roll_pitch,
         "ang_vel_xy_stand": -0.75 * stand * roll_pitch,
         "orientation": -18.8 * data.projected_gravity_b[:, :2].square().sum(-1),
-        "base_height": -1666.6 * height_error,
+        "base_height": -266.6 * height_error,
         "base_height_yaw": -106.6 * yaw * height_error,
-        "feet_clearance": 0.3 * moving_xy * clearance,
-        "feet_clearance_bwd": 1.5 * backward * clearance,
+        "feet_clearance": 1.5 * moving_xy * clearance,
+        "feet_clearance_bwd": 2.8 * backward * clearance,
         "stand_leg_symmetry": -10.0 * symmetry * stand,
         "dof_pos_limits": -0.2 * position_excess.sum(-1),
         "dof_vel_limits": -0.5 * (data.joint_vel.abs() - 6.3).clamp(0.0, 1.0).sum(-1),
@@ -112,6 +112,6 @@ def _robotload_terms(env):
         "feet_slide_stand": -0.5 * stand * slide,
         "lin_vel_xy_stand": -1.5 * stand * linear_vel[:, :2].square().sum(-1) * (1.0 + 2.0 * (force > 2.0)),
         "feet_contact_stand": -10.0 * stand * (~contact).sum(-1),
-        "action_rate": -0.2 * (env.action_manager.action - env.action_manager.prev_action).square().sum(-1),
+        "action_rate": -0.45 * (env.action_manager.action - env.action_manager.prev_action).square().sum(-1),
         "haa_abduction": -200.0 * abduction * abduction_weight,
     }

@@ -1,4 +1,4 @@
-"""Run an exported Go2 policy in MuJoCo for Isaac-Sim-to-MuJoCo validation."""
+"""Run an exported Go2 or ChituMax policy in MuJoCo."""
 
 from __future__ import annotations
 
@@ -38,12 +38,11 @@ def resolve_path(value: str | Path, base: Path) -> Path:
     return path if path.is_absolute() else (base / path).resolve()
 
 
-def newest_exported_policy() -> Path:
-    policies = list((PROJECT_ROOT / "logs" / "himloco_rsl_rl" / "go2_amp").glob("*/exported/policy.pt"))
+def newest_exported_policy(pattern: str) -> Path:
+    policies = list(PROJECT_ROOT.glob(pattern))
     if not policies:
         raise FileNotFoundError(
-            "No exported Go2 policy found. Run play.py --task Unitree-Go2-AMP-Play once, "
-            "or pass --policy /path/to/policy.pt."
+            f"No policy matched {pattern}. Run play.py once, or pass --policy /path/to/policy.pt."
         )
     return max(policies, key=lambda path: path.stat().st_mtime)
 
@@ -155,17 +154,32 @@ def main() -> None:
 
     policy_path = args.policy.expanduser().resolve() if args.policy else None
     if policy_path is None:
-        policy_path = resolve_path(cfg["policy_path"], ROOT) if cfg.get("policy_path") else newest_exported_policy()
-    xml_path = resolve_path(cfg["xml_path"], ROOT) if cfg.get("xml_path") else resolve_path(cfg["urdf_path"], PROJECT_ROOT)
+        if cfg.get("policy_path"):
+            policy_path = resolve_path(cfg["policy_path"], ROOT)
+        else:
+            pattern = cfg.get("policy_glob", "logs/himloco_rsl_rl/go2_amp/*/exported/policy.pt")
+            policy_path = newest_exported_policy(pattern)
+    if cfg.get("xml_path"):
+        xml_path = resolve_path(cfg["xml_path"], ROOT)
+    elif cfg.get("urdf_path"):
+        xml_path = resolve_path(cfg["urdf_path"], PROJECT_ROOT)
+    else:
+        raise ValueError("Config needs xml_path or urdf_path")
     if not policy_path.is_file():
         raise FileNotFoundError(f"Policy does not exist: {policy_path}")
     if not xml_path.is_file():
-        raise FileNotFoundError(f"MuJoCo XML does not exist: {xml_path}")
+        raise FileNotFoundError(f"MuJoCo model does not exist: {xml_path}")
 
     device = torch.device(args.device if args.device == "cpu" or torch.cuda.is_available() else "cpu")
     policy = torch.jit.load(str(policy_path), map_location=device).eval()
-    model = (mujoco.MjModel.from_xml_path(str(xml_path)) if cfg.get("xml_path")
-             else load_go2_model(xml_path, float(cfg["simulation_dt"])))
+    if cfg.get("xml_path"):
+        model = mujoco.MjModel.from_xml_path(str(xml_path))
+    elif cfg.get("builder") == "chitu":
+        from chitu_model import load_chitu_model
+
+        model = load_chitu_model(xml_path, float(cfg["simulation_dt"]))
+    else:
+        model = load_go2_model(xml_path, float(cfg["simulation_dt"]))
     data = mujoco.MjData(model)
 
     model.opt.timestep = float(cfg["simulation_dt"])
@@ -188,7 +202,11 @@ def main() -> None:
     kd = np.asarray(cfg["kds"], dtype=np.float32)
     effort_limit = np.asarray(cfg["effort_limits"], dtype=np.float32)
     cmd_scale = np.asarray(cfg["cmd_scale"], dtype=np.float32)
-    action_scale = float(cfg["action_scale"])
+    action_scale = np.asarray(cfg["action_scale"], dtype=np.float32)
+    if action_scale.ndim == 0:
+        action_scale = np.full(num_actions, float(action_scale), dtype=np.float32)
+    if action_scale.shape != (num_actions,):
+        raise ValueError(f"action_scale must be a scalar or {num_actions} values, got {action_scale.shape}")
     command = np.asarray(args.cmd if args.cmd is not None else cfg["cmd_init"], dtype=np.float32)
     ranges = cfg["command_ranges"]
     joystick = JoystickCommand(args.joystick, cfg.get("joystick", {}), ranges)
@@ -252,8 +270,8 @@ def main() -> None:
                 tensor = torch.from_numpy(obs_history).unsqueeze(0).to(device)
                 action_policy = policy(tensor).cpu().numpy().reshape(-1).astype(np.float32)
             np.clip(action_policy, -100.0, 100.0, out=action_policy)
-            action_mujoco = action_policy[mujoco_to_policy]
-            target_q = default_q + action_scale * action_mujoco
+            action_mujoco = (action_policy * action_scale)[mujoco_to_policy]
+            target_q = default_q + action_mujoco
 
             # Refresh at 10 Hz without flooding the terminal with new lines.
             policy_step = step // decimation
@@ -272,11 +290,14 @@ def main() -> None:
         q = data.qpos[qpos_adr]
         dq = data.qvel[dof_adr]
         raw_torque = (target_q - q) * kp - dq * kd
-        curve = cfg["torque_speed_curve"]
-        limit = np.where(raw_torque * dq > 0, curve["Y1"], curve["Y2"])
-        falloff = np.clip((curve["X2"] - np.abs(dq)) / (curve["X2"] - curve["X1"]), 0, 1)
-        limit = np.minimum(limit * falloff, effort_limit)
-        torque = np.clip(raw_torque, -limit, limit)
+        curve = cfg.get("torque_speed_curve")
+        if curve is None:
+            torque = np.clip(raw_torque, -effort_limit, effort_limit)
+        else:
+            limit = np.where(raw_torque * dq > 0, curve["Y1"], curve["Y2"])
+            falloff = np.clip((curve["X2"] - np.abs(dq)) / (curve["X2"] - curve["X1"]), 0, 1)
+            limit = np.minimum(limit * falloff, effort_limit)
+            torque = np.clip(raw_torque, -limit, limit)
         data.ctrl[actuator_ids] = torque
         mujoco.mj_step(model, data)
 

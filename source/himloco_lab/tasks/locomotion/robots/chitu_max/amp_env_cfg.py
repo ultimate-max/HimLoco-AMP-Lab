@@ -41,7 +41,7 @@ class RobotEnvCfg(BaseRobotEnvCfg):
             rel_standing_envs=0.1,
             debug_vis=False,
             ranges=ChituVelocityCommandCfg.Ranges(
-                lin_vel_x=(-1.0, 1.5), lin_vel_y=(-0.8, 0.8), ang_vel_z=(-1.0, 1.0),
+                lin_vel_x=(-1.0, 1.0), lin_vel_y=(-0.8, 0.8), ang_vel_z=(-1.0, 1.0),
             ),
         )
         self.curriculum.lin_vel_cmd_levels = None
@@ -93,8 +93,8 @@ class RobotEnvCfg(BaseRobotEnvCfg):
             mode="reset",
             params={
                 "asset_cfg": SceneEntityCfg("robot", body_names="base"),
-                "force_range": (-25.0, 25.0),
-                "torque_range": (-30.0, 30.0),
+                "force_range": (-15.0, 15.0),
+                "torque_range": (-10.0, 10.0),
             },
         )
         self.events.reference_state = EventTerm(
